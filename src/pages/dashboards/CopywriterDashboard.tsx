@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { PenTool, CheckCircle, Calendar as CalendarIcon, List, LayoutDashboard, ArrowLeft, Send } from "lucide-react";
+import { PenTool, CheckCircle, Calendar as CalendarIcon, List, LayoutDashboard, ArrowLeft, Send, Megaphone } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -34,6 +34,9 @@ const CopywriterDashboard = () => {
   const [copyForm, setCopyForm] = useState({ copy_content: "", copy_writer_notes: "" });
   const [date, setDate] = useState<Date | undefined>(new Date());
   
+  const [changeRequests, setChangeRequests] = useState<any[]>([]);
+  const [newChangeRequest, setNewChangeRequest] = useState("");
+  
   const { toast } = useToast();
 
   useEffect(() => {
@@ -49,7 +52,7 @@ const CopywriterDashboard = () => {
       .from('content_items')
       .select('*, projects!inner(*)')
       .in('status', ['pending_copy', 'rejected_from_copy_qc'])
-      // .eq('projects.status', 'active') // Optional: only active projects
+      .eq('is_admin_verified', false)
       .order('publish_date', { ascending: true });
 
     if (error) {
@@ -89,10 +92,51 @@ const CopywriterDashboard = () => {
         .from('content_items')
         .select('*')
         .eq('project_id', project.id)
+        .eq('is_admin_verified', false)
         .order('publish_date', { ascending: true });
       
       if (data) setProjectContent(data);
+      fetchChangeRequests(project.id);
       setViewMode('calendar'); // Default to calendar as requested
+  };
+
+  const fetchChangeRequests = async (projectId: string) => {
+    try {
+        const { data, error } = await (supabase
+          .from('project_change_requests' as any)
+          .select('*')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false }));
+          
+        if (error) throw error;
+        if (data) setChangeRequests(data);
+    } catch (error: any) {
+        if (error.message?.includes("project_change_requests")) {
+             console.error("Change requests table missing");
+        }
+    }
+  };
+
+  const handleSubmitChangeRequest = async () => {
+    if (!newChangeRequest.trim() || !selectedProject) return;
+
+    try {
+        const { error } = await (supabase
+          .from('project_change_requests' as any)
+          .insert({
+              project_id: selectedProject.id,
+              content: newChangeRequest,
+              created_by: user?.id
+          }));
+        
+        if (error) throw error;
+        
+        toast({ title: "Success", description: "Request submitted." });
+        setNewChangeRequest("");
+        fetchChangeRequests(selectedProject.id);
+    } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
   };
 
   const handleTaskClick = (task: any) => {
@@ -307,16 +351,16 @@ const CopywriterDashboard = () => {
                             className="rounded-2xl border bg-gradient-to-br from-black/80 to-black/40 backdrop-blur-2xl shadow-xl p-8"
                             classNames={{
                                 head_cell: "text-muted-foreground rounded-md w-12 font-normal text-sm uppercase tracking-wider mb-4",
-                                cell: "h-12 w-12 text-center text-sm p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20 my-1",
-                                day: "h-12 w-12 p-0 font-normal aria-selected:opacity-100 rounded-xl hover:bg-white/5 transition-all duration-300 data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[selected]:shadow-[0_0_20px_var(--primary)]",
-                                day_selected: "bg-primary text-black hover:bg-primary hover:text-black focus:bg-primary focus:text-black shadow-[0_0_15px_rgba(234,179,8,0.6)] font-bold scale-110 transition-transform",
-                                day_today: "bg-white/10 text-white",
+                                cell: "h-12 w-12 text-center text-sm p-0 relative focus-within:relative focus-within:z-20 my-1",
+                                day: "h-12 w-12 p-0 font-normal aria-selected:opacity-100 rounded-full hover:bg-white/5 transition-all duration-300",
+                                day_selected: "bg-primary text-black hover:bg-primary hover:text-black focus:bg-primary focus:text-black shadow-[0_0_20px_rgba(234,179,8,0.8)] font-bold scale-110 transition-transform rounded-full",
+                                day_today: "bg-white/10 text-white rounded-full",
                             }}
                             modifiers={{
                                 hasContent: (date) => contentDays.some(d => d.toDateString() === date.toDateString())
                             }}
                             modifiersClassNames={{
-                                hasContent: "bg-primary/15 text-primary border border-primary/30 shadow-[0_0_10px_rgba(234,179,8,0.15)] font-bold hover:bg-primary/25 hover:scale-105 transition-all duration-300"
+                                hasContent: "bg-primary/15 text-primary border border-primary/30 shadow-[0_0_10px_rgba(234,179,8,0.15)] font-bold hover:bg-primary/25 hover:scale-105 transition-all duration-300 rounded-full"
                             }}
                         />
                     </Card>
@@ -362,6 +406,57 @@ const CopywriterDashboard = () => {
                         )}
                     </div>
                 </div>
+            )}
+
+            {/* Additional Change Requests - Highlighted */}
+            {selectedProject && (
+                <Card className="glass-card p-8 border-primary/30 shadow-[0_0_20px_rgba(234,179,8,0.1)] relative overflow-hidden mt-8">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-primary shadow-[2px_0_10px_rgba(234,179,8,0.5)]"></div>
+                    <CardTitle className="mb-4 flex items-center gap-2 text-primary font-bold text-xl uppercase tracking-wider">
+                        <Megaphone className="w-6 h-6 animate-pulse" />
+                        Additional Permanent Changes (Main Point)
+                    </CardTitle>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="space-y-4">
+                            <div className="glass-card p-1 bg-black/20 focus-within:ring-2 ring-primary/50 transition-all">
+                                <Textarea 
+                                    placeholder="Add any critical points or strategic changes here..." 
+                                    value={newChangeRequest}
+                                    onChange={(e) => setNewChangeRequest(e.target.value)}
+                                    className="min-h-[120px] border-none focus-visible:ring-0 bg-transparent resize-none p-4 text-base"
+                                />
+                                <div className="p-2 flex justify-end bg-white/5 rounded-b-xl">
+                                    <Button onClick={handleSubmitChangeRequest} className="bg-primary text-black hover:bg-primary/90 font-bold px-6">
+                                        Update Main Points
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                <span className="w-4 h-[1px] bg-muted-foreground/30"></span>
+                                Change History
+                            </h4>
+                            <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                                {changeRequests.map(req => (
+                                    <div key={req.id} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-primary/20 transition-all group">
+                                        <p className="mb-2 text-sm leading-relaxed group-hover:text-white transition-colors">{req.content}</p>
+                                        <div className="flex justify-between items-center text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">
+                                            <span>Post Update</span>
+                                            <span>{new Date(req.created_at).toLocaleDateString()}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                                {changeRequests.length === 0 && (
+                                    <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-xl border-dashed border border-white/10 italic">
+                                        <p>No critical changes logged yet.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </Card>
             )}
         </div>
       )}

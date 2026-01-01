@@ -31,10 +31,10 @@ const CalendarView = ({ contentItems, onDateSelect, selectedDate }: any) => {
                     head_row: "flex justify-between",
                     head_cell: "text-muted-foreground rounded-md w-full font-normal text-sm uppercase tracking-wider mb-4",
                     row: "flex w-full mt-2 justify-between gap-2",
-                    cell: "h-14 w-full text-center text-sm p-0 relative [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
-                    day: "h-14 w-full p-0 font-normal aria-selected:opacity-100 hover:bg-white/5 rounded-xl transition-all duration-300",
-                    day_selected: "bg-primary text-black hover:bg-primary hover:text-black focus:bg-primary focus:text-black shadow-[0_0_15px_rgba(234,179,8,0.6)] font-bold scale-105 transition-transform",
-                    day_today: "bg-white/10 text-white font-bold",
+                    cell: "h-14 w-full text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
+                    day: "h-14 w-full p-0 font-normal aria-selected:opacity-100 hover:bg-white/5 rounded-full transition-all duration-300",
+                    day_selected: "bg-primary text-black hover:bg-primary hover:text-black focus:bg-primary focus:text-black shadow-[0_0_20px_rgba(234,179,8,0.8)] font-bold scale-105 transition-transform rounded-full",
+                    day_today: "bg-white/10 text-white font-bold rounded-full",
                 }}
                 modifiers={{
                     hasContent: hasContent
@@ -115,20 +115,33 @@ const DigitalMarketingDashboard = () => {
     const { data } = await supabase
       .from('content_items')
       .select('*')
-      .eq('project_id', projectId);
+      .eq('project_id', projectId)
+      .eq('is_admin_verified', false);
     
     if (data) setContentItems(data);
   };
 
   const fetchChangeRequests = async (projectId: string) => {
-    // Casting to any to avoid type errors until types are regenerated
-    const { data } = await (supabase
-      .from('project_change_requests' as any)
-      .select('*')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: false }));
-      
-    if (data) setChangeRequests(data);
+    try {
+        const { data, error } = await (supabase
+          .from('project_change_requests' as any)
+          .select('*')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false }));
+          
+        if (error) throw error;
+        if (data) setChangeRequests(data);
+    } catch (error: any) {
+        console.error("Error fetching change requests:", error);
+        // Specifically check for 'table not found' to guide the user
+        if (error.message?.includes("project_change_requests")) {
+             toast({ 
+                title: "Database Table Missing", 
+                description: "The 'project_change_requests' table has not been created yet. Please run the provided SQL migration in your Supabase SQL Editor.",
+                variant: "destructive"
+             });
+        }
+    }
   };
 
   const handleProjectClick = (project: any) => {
@@ -161,28 +174,6 @@ const DigitalMarketingDashboard = () => {
       setIsIdeaDialogOpen(true);
   };
 
-  const handleCompletePlanning = async () => {
-      if (!selectedProject) return;
-      
-      try {
-          // Update ALL items for this project that are in 'pending_dm' status
-          const { error } = await supabase
-            .from('content_items')
-            .update({ status: 'pending_copy' })
-            .eq('project_id', selectedProject.id)
-            .eq('status', 'pending_dm');
-            
-          if (error) throw error;
-          
-          toast({ 
-              title: "Planning Completed", 
-              description: "All content items have been sent to the Copywriter." 
-          });
-          fetchContentItems(selectedProject.id); // Refresh
-      } catch (error: any) {
-          toast({ title: "Error", description: error.message, variant: "destructive" });
-      }
-  };
 
   const handleSubmitIdea = async () => {
     if (!selectedProject || !selectedDate) return;
@@ -355,41 +346,45 @@ const DigitalMarketingDashboard = () => {
                      </Card>
 
                      {/* Additional Change Requests */}
-                     <Card className="glass-card p-8 border-white/5">
-                        <CardTitle className="mb-4 flex items-center gap-2">
-                            <Megaphone className="w-5 h-5 text-primary" />
-                            Additional Permanent Changes
+                     <Card className="glass-card p-8 border-primary/30 shadow-[0_0_20px_rgba(234,179,8,0.1)] relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-primary shadow-[2px_0_10px_rgba(234,179,8,0.5)]"></div>
+                         <CardTitle className="mb-4 flex items-center gap-2 text-primary font-bold text-xl uppercase tracking-wider">
+                            <Megaphone className="w-6 h-6 animate-pulse" />
+                            Additional Permanent Changes (Main Point)
                         </CardTitle>
                         <div className="space-y-4">
                             <div className="glass-card p-1 bg-black/20 focus-within:ring-2 ring-primary/50 transition-all">
                                 <Textarea 
-                                    placeholder="Describe any additional changes, strategic shifts, or permanent requirements..." 
+                                    placeholder="Add any critical points or strategic changes here..." 
                                     value={newChangeRequest}
                                     onChange={(e) => setNewChangeRequest(e.target.value)}
-                                    className="min-h-[100px] border-none focus-visible:ring-0 bg-transparent resize-none p-4 text-base"
+                                    className="min-h-[120px] border-none focus-visible:ring-0 bg-transparent resize-none p-4 text-base"
                                 />
                                 <div className="p-2 flex justify-end bg-white/5 rounded-b-xl">
-                                    <Button onClick={handleSubmitChangeRequest} className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-6">
-                                        Submit Request
+                                    <Button onClick={handleSubmitChangeRequest} className="bg-primary text-black hover:bg-primary/90 font-bold px-6">
+                                        Update Main Points
                                     </Button>
                                 </div>
                             </div>
                             
-                            <div className="space-y-2 mt-6">
-                                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Request History</h4>
-                                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                            <div className="space-y-3 mt-6">
+                                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                    <span className="w-4 h-[1px] bg-muted-foreground/30"></span>
+                                    Change History
+                                </h4>
+                                <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
                                     {changeRequests.map(req => (
-                                        <div key={req.id} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-primary/20 transition-colors">
-                                            <p className="mb-2 text-sm leading-relaxed">{req.content}</p>
-                                            <div className="flex justify-between items-center text-xs text-muted-foreground">
+                                        <div key={req.id} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-primary/20 transition-all group">
+                                            <p className="mb-2 text-sm leading-relaxed group-hover:text-white transition-colors">{req.content}</p>
+                                            <div className="flex justify-between items-center text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">
                                                 <span>Submitted by You</span>
-                                                <span>{new Date(req.created_at).toLocaleString()}</span>
+                                                <span>{new Date(req.created_at).toLocaleDateString()}</span>
                                             </div>
                                         </div>
                                     ))}
                                     {changeRequests.length === 0 && (
-                                        <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-xl border-dashed border border-white/10">
-                                            <p>No additional changes submitted yet.</p>
+                                        <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-xl border-dashed border border-white/10 italic">
+                                            <p>No critical changes logged yet.</p>
                                         </div>
                                     )}
                                 </div>
@@ -413,7 +408,7 @@ const DigitalMarketingDashboard = () => {
                             </div>
                             <div className="flex gap-3">
                                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary font-bold text-xs">3</div>
-                                <p>When finished, click <strong>"Complete Planning"</strong> to notify the Copywriter.</p>
+                                <p>Save your idea to automatically notify the Copywriter for that specific date.</p>
                             </div>
                             
                             <div className="mt-4 p-3 rounded-lg bg-black/40 border border-white/5 flex items-center gap-3">
@@ -486,8 +481,12 @@ const DigitalMarketingDashboard = () => {
              </div>
 
              <DialogFooter className="gap-2 sm:gap-0">
-                 <Button onClick={openIdeaDialog} className="bg-primary text-black hover:bg-primary/90 font-bold min-w-[120px] w-full">
-                     {selectedItem ? "Edit Content" : "Add Content"}
+                 <Button 
+                    onClick={openIdeaDialog} 
+                    className="bg-primary text-black hover:bg-primary/90 font-bold min-w-[120px] w-full"
+                    disabled={selectedItem && selectedItem.status !== 'pending_dm'}
+                 >
+                     {selectedItem ? (selectedItem.status !== 'pending_dm' ? "SENT TO COPYWRITER" : "Edit Content") : "Add Content"}
                  </Button>
              </DialogFooter>
          </DialogContent>

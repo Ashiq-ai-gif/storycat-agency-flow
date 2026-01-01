@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { User } from "@supabase/supabase-js";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Eye, CheckCircle2, XCircle, ExternalLink, ThumbsUp, ThumbsDown, FolderOpen, ArrowLeft } from "lucide-react";
+import { Eye, CheckCircle2, XCircle, ExternalLink, ThumbsUp, ThumbsDown, FolderOpen, ArrowLeft, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -29,6 +29,9 @@ const DesignerQCDashboard = () => {
   const [actionItem, setActionItem] = useState<any>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject' | null>(null);
   const [feedback, setFeedback] = useState("");
+  
+  const [changeRequests, setChangeRequests] = useState<any[]>([]);
+  const [newChangeRequest, setNewChangeRequest] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -46,6 +49,7 @@ const DesignerQCDashboard = () => {
         .from('content_items')
         .select('*, projects!inner(title, id, brief)')
         .eq('status', 'pending_design_qc')
+        .eq('is_admin_verified', false)
         .order('design_submitted_at', { ascending: false });
 
     if (error) {
@@ -56,11 +60,50 @@ const DesignerQCDashboard = () => {
     setLoading(false);
   };
 
+  const fetchChangeRequests = async (projectId: string) => {
+    try {
+        const { data, error } = await (supabase
+          .from('project_change_requests' as any)
+          .select('*')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false }));
+          
+        if (error) throw error;
+        if (data) setChangeRequests(data);
+    } catch (error: any) {
+        if (error.message?.includes("project_change_requests")) {
+             console.error("Change requests table missing");
+        }
+    }
+  };
+
+  const handleSubmitChangeRequest = async () => {
+    if (!newChangeRequest.trim() || !selectedProjectId) return;
+
+    try {
+        const { error } = await (supabase
+          .from('project_change_requests' as any)
+          .insert({
+              project_id: selectedProjectId,
+              content: newChangeRequest,
+              created_by: user?.id
+          }));
+        
+        if (error) throw error;
+        
+        toast({ title: "Success", description: "Request submitted." });
+        setNewChangeRequest("");
+        fetchChangeRequests(selectedProjectId);
+    } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
   const fetchStats = async () => {
       // Simple stats fetching - can be optimized
-      const { count: toReview } = await supabase.from('content_items').select('*', { count: 'exact', head: true }).eq('status', 'pending_design_qc');
-      const { count: approved } = await supabase.from('content_items').select('*', { count: 'exact', head: true }).eq('status', 'completed'); // Assuming 'completed' is next step
-      const { count: rejected } = await supabase.from('content_items').select('*', { count: 'exact', head: true }).eq('status', 'rejected_from_design_qc');
+      const { count: toReview } = await supabase.from('content_items').select('*', { count: 'exact', head: true }).eq('status', 'pending_design_qc').eq('is_admin_verified', false);
+      const { count: approved } = await supabase.from('content_items').select('*', { count: 'exact', head: true }).eq('status', 'completed').eq('is_admin_verified', false);
+      const { count: rejected } = await supabase.from('content_items').select('*', { count: 'exact', head: true }).eq('status', 'rejected_from_design_qc').eq('is_admin_verified', false);
 
       setStats({
           toReview: toReview || 0,
@@ -127,6 +170,12 @@ const DesignerQCDashboard = () => {
 
   const projects = Object.values(projectGroups);
   const selectedProject = selectedProjectId ? projectGroups[selectedProjectId] : null;
+
+  useEffect(() => {
+    if (selectedProjectId) {
+        fetchChangeRequests(selectedProjectId);
+    }
+  }, [selectedProjectId]);
 
   return (
     <DashboardLayout>
@@ -234,6 +283,57 @@ const DesignerQCDashboard = () => {
                     <p className="text-muted-foreground text-sm">Reviewing {selectedProject?.items.length} items</p>
                   </div>
               </div>
+
+              {/* Additional Change Requests - Highlighted */}
+              {selectedProjectId && (
+                <Card className="glass-card p-8 border-primary/30 shadow-[0_0_20px_rgba(234,179,8,0.1)] relative overflow-hidden mb-8">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-primary shadow-[2px_0_10px_rgba(234,179,8,0.5)]"></div>
+                    <CardTitle className="mb-4 flex items-center gap-2 text-primary font-bold text-xl uppercase tracking-wider">
+                        <Megaphone className="w-6 h-6 animate-pulse" />
+                        Additional Permanent Changes (Main Point)
+                    </CardTitle>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="space-y-4">
+                            <div className="glass-card p-1 bg-black/20 focus-within:ring-2 ring-primary/50 transition-all">
+                                <Textarea 
+                                    placeholder="Add any critical points or strategic changes here..." 
+                                    value={newChangeRequest}
+                                    onChange={(e) => setNewChangeRequest(e.target.value)}
+                                    className="min-h-[120px] border-none focus-visible:ring-0 bg-transparent resize-none p-4 text-base"
+                                />
+                                <div className="p-2 flex justify-end bg-white/5 rounded-b-xl">
+                                    <Button onClick={handleSubmitChangeRequest} className="bg-primary text-black hover:bg-primary/90 font-bold px-6">
+                                        Update Main Points
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                <span className="w-4 h-[1px] bg-muted-foreground/30"></span>
+                                Change History
+                            </h4>
+                            <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                                {changeRequests.map(req => (
+                                    <div key={req.id} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-primary/20 transition-all group">
+                                        <p className="mb-2 text-sm leading-relaxed group-hover:text-white transition-colors">{req.content}</p>
+                                        <div className="flex justify-between items-center text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">
+                                            <span>Post Update</span>
+                                            <span>{new Date(req.created_at).toLocaleDateString()}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                                {changeRequests.length === 0 && (
+                                    <div className="text-center py-8 text-muted-foreground bg-white/5 rounded-xl border-dashed border border-white/10 italic">
+                                        <p>No critical changes logged yet.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+              )}
 
               {selectedProject?.items.length === 0 ? (
                   <Card variant="glass" className="p-12 text-center">
