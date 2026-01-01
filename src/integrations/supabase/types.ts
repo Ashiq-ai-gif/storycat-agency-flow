@@ -65,6 +65,8 @@ export type Database = {
           publish_date: string
           rejection_reason: string | null
           status: string | null
+          is_admin_verified: boolean | null
+          admin_verified_at: string | null
         }
         Insert: {
           copy_assignee?: string | null
@@ -91,6 +93,8 @@ export type Database = {
           publish_date: string
           rejection_reason?: string | null
           status?: string | null
+          is_admin_verified?: boolean | null
+          admin_verified_at?: string | null
         }
         Update: {
           copy_assignee?: string | null
@@ -117,6 +121,8 @@ export type Database = {
           publish_date?: string
           rejection_reason?: string | null
           status?: string | null
+          is_admin_verified?: boolean | null
+          admin_verified_at?: string | null
         }
         Relationships: [
           {
