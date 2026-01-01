@@ -1,41 +1,71 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Cat, ArrowLeft, Loader2 } from "lucide-react";
+import { Cat, Loader2 } from "lucide-react";
 import { z } from "zod";
 
 const authSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters").optional(),
   email: z.string().email("Please enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
 const Auth = () => {
-  const [searchParams] = useSearchParams();
-  const [isSignUp, setIsSignUp] = useState(searchParams.get("mode") === "signup");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const getDashboardPath = (role: string) => {
+    switch (role) {
+      case 'digital_marketing_manager':
+        return '/dashboard/digital-marketing';
+      case 'copywriter':
+        return '/dashboard/copywriter';
+      case 'copy_qc':
+        return '/dashboard/copy-qc';
+      case 'designer':
+        return '/dashboard/designer';
+      case 'designer_qc':
+        return '/dashboard/designer-qc';
+      case 'admin':
+      default:
+        return '/dashboard';
+    }
+  };
+
+  const handleRedirect = async (userId: string) => {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .single();
+        
+        const path = getDashboardPath(profile?.role || 'employee');
+        navigate(path);
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+        navigate("/dashboard");
+      }
+  };
 
   useEffect(() => {
     // Check if user is already logged in
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
-        navigate("/dashboard");
+        handleRedirect(session.user.id);
       }
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        navigate("/dashboard");
+        handleRedirect(session.user.id);
       }
     });
 
@@ -44,20 +74,14 @@ const Auth = () => {
 
   const validateForm = () => {
     try {
-      const data = isSignUp 
-        ? { name, email, password }
-        : { email, password };
+      const data = { email, password };
       
-      if (isSignUp) {
-        authSchema.parse(data);
-      } else {
-        authSchema.omit({ name: true }).parse(data);
-      }
+      authSchema.parse(data);
       setErrors({});
       return true;
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const fieldErrors: { name?: string; email?: string; password?: string } = {};
+        const fieldErrors: { email?: string; password?: string } = {};
         error.errors.forEach((err) => {
           const field = err.path[0] as string;
           fieldErrors[field as keyof typeof fieldErrors] = err.message;
@@ -76,39 +100,20 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      if (isSignUp) {
-        const redirectUrl = `${window.location.origin}/`;
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: redirectUrl,
-            data: {
-              full_name: name,
-            },
-          },
-        });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-        if (error) throw error;
+      if (error) throw error;
 
-        toast({
-          title: "Account created!",
-          description: "Please check your email to verify your account.",
-        });
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error) throw error;
-
-        toast({
-          title: "Welcome back!",
-          description: "You have successfully signed in.",
-        });
-        
-        navigate("/dashboard");
+      toast({
+        title: "Welcome back!",
+        description: "You have successfully signed in.",
+      });
+      
+      if (data.user) {
+        await handleRedirect(data.user.id);
       }
     } catch (error: any) {
       let errorMessage = error.message;
@@ -137,14 +142,6 @@ const Auth = () => {
       <div className="absolute inset-0 bg-gradient-to-b from-background via-background to-card/30" />
 
       <div className="relative z-10 w-full max-w-md">
-        {/* Back to Home */}
-        <Link 
-          to="/" 
-          className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-8"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Home
-        </Link>
 
         <Card variant="glass" className="p-2">
           <CardHeader className="text-center pb-2">
@@ -155,32 +152,16 @@ const Auth = () => {
               </div>
             </div>
             <CardTitle className="text-2xl font-bold">
-              {isSignUp ? "Create Account" : "Welcome Back"}
+              Employee Login
             </CardTitle>
             <CardDescription>
-              {isSignUp 
-                ? "Sign up to start managing your workflows" 
-                : "Sign in to your StoryCat account"
-              }
+              Sign in to manage your workflows
             </CardDescription>
           </CardHeader>
           
           <CardContent className="pt-4">
             <form onSubmit={handleAuth} className="space-y-4">
-              {isSignUp && (
-                <div>
-                  <Input
-                    type="text"
-                    placeholder="Full Name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className={errors.name ? "border-destructive" : ""}
-                  />
-                  {errors.name && (
-                    <p className="text-sm text-destructive mt-1">{errors.name}</p>
-                  )}
-                </div>
-              )}
+
               
               <div>
                 <Input
@@ -216,22 +197,9 @@ const Auth = () => {
                 disabled={loading}
               >
                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                {isSignUp ? "Create Account" : "Sign In"}
+                Sign In
               </Button>
             </form>
-
-            <div className="mt-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
-                <button
-                  type="button"
-                  onClick={() => setIsSignUp(!isSignUp)}
-                  className="text-primary font-medium hover:underline"
-                >
-                  {isSignUp ? "Sign In" : "Sign Up"}
-                </button>
-              </p>
-            </div>
           </CardContent>
         </Card>
 
